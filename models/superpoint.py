@@ -140,6 +140,11 @@ class SuperPoint(nn.Module):
         if mk == 0 or mk < -1:
             raise ValueError('\"max_keypoints\" must be positive or \"-1\"')
 
+        if  'mask' in self.config:
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            self.image_mask = torch.from_numpy(self.config['mask']).to(device)
+        else:
+            self.image_mask = None
         print('Loaded SuperPoint model')
 
     def forward(self, data):
@@ -170,12 +175,18 @@ class SuperPoint(nn.Module):
         keypoints = [
             torch.nonzero(s > self.config['keypoint_threshold'])
             for s in scores]
+        # Filter points
+        if self.image_mask is not None:
+            keypoints = [
+                k[self.image_mask[k[:, 0], k[:, 1]] > 0]
+                for k in keypoints]
         scores = [s[tuple(k.t())] for s, k in zip(scores, keypoints)]
 
         # Discard keypoints near the image borders
-        keypoints, scores = list(zip(*[
-            remove_borders(k, s, self.config['remove_borders'], h*8, w*8)
-            for k, s in zip(keypoints, scores)]))
+        if self.image_mask is None:
+            keypoints, scores = list(zip(*[
+                remove_borders(k, s, self.config['remove_borders'], h*8, w*8)
+                for k, s in zip(keypoints, scores)]))
 
         # Keep the k keypoints with highest score
         if self.config['max_keypoints'] >= 0:
@@ -200,3 +211,4 @@ class SuperPoint(nn.Module):
             'scores': scores,
             'descriptors': descriptors,
         }
+
